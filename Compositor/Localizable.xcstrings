@@ -354,7 +354,26 @@
     "Project tabs" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目标签页" } } } },
     "Unsaved changes" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未存储的更改" } } } },
     "Importing…" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在导入…" } } } },
-    "Import" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "导入" } } } }
+    "Import" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "导入" } } } },
+    "Canvas" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "画布" } } } },
+    "Canvas text" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "画布文字" } } } },
+    "Characters" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "字符" } } } },
+    "Pixel Shape" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "像素形状" } } } },
+    "Light on Dark" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "深色上的亮色" } } } },
+    "Gridline every" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网格线间隔" } } } },
+    "Subdivisions" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "细分" } } } },
+    "pixels" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "像素" } } } },
+    "Preset sizes for screens and common formats" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "屏幕和常用格式的预设尺寸" } } } },
+    "Drop to open in a new canvas" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "拖放以在新画布中打开" } } } },
+    "Drop into new canvas" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "拖放到新画布" } } } },
+    "New blank layer (⇧⌘N)" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建空白图层（⇧⌘N）" } } } },
+    "New blank layer" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建空白图层" } } } },
+    "Group selected layers (⌘G)" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编组选定图层（⌘G）" } } } },
+    "New folder" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建文件夹" } } } },
+    "Add layer effect" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加图层效果" } } } },
+    "Layer effects" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "图层效果" } } } },
+    "New adjustment layer" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建调整图层" } } } },
+    "Loading histogram…" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在加载直方图…" } } } }
   },
   "version" : "1.0"
 }
