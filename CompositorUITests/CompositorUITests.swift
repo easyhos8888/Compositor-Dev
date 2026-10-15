@@ -50,4 +50,14 @@ final class CompositorUITests: XCTestCase {
         print("LAUNCH_TO_READY_SECONDS: \(samples)")
         print("LAUNCH_TO_READY_MEDIAN: \(samples.sorted()[2])")
     }
+
+    @MainActor
+    func testSimplifiedChineseUI() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let newCanvas = app.buttons["newCanvasToolbar"]
+        XCTAssertTrue(newCanvas.waitForExistence(timeout: 5))
+        XCTAssertEqual(newCanvas.label, "新建画布")
+    }
 }

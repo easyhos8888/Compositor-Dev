@@ -64,7 +64,7 @@ struct TypeControls: View {
                             }
                             .buttonStyle(.plain)
                             .help("Align " + alignment.rawValue.lowercased())
-                            .accessibilityLabel("Align " + alignment.rawValue.lowercased())
+                            .accessibilityLabel(LocalizedStringKey("Align " + alignment.rawValue.lowercased()))
                             .accessibilityAddTraits(selected ? .isSelected : [])
                         }
                     }
@@ -147,7 +147,7 @@ private struct TypeFontPicker: NSViewRepresentable {
     private static func isMultiple(_ item: NSMenuItem?) -> Bool { item?.representedObject as? String == multiple }
     static func showMultiple(in button: NSPopUpButton) {
         if !isMultiple(button.item(at: 0)) {
-            let item = NSMenuItem(title: multiple, action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: String(localized: String.LocalizationValue(multiple)), action: nil, keyEquivalent: "")
             item.representedObject = multiple
             button.menu?.insertItem(item, at: 0)
         }
