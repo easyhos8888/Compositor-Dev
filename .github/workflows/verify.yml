@@ -62,6 +62,7 @@ jobs:
 
       # These two suites show real windows and time them, so they run alone after the rest.
       - name: Run unit tests in parallel
+        timeout-minutes: 45
         run: >
           xcodebuild test-without-building
           -project Compositor.xcodeproj
@@ -69,12 +70,12 @@ jobs:
           -destination 'platform=macOS,arch=arm64'
           -derivedDataPath DerivedData
           -resultBundlePath ParallelResults.xcresult
-          -parallel-testing-enabled YES
+          -parallel-testing-enabled NO
           -skip-testing:CompositorTests/FloatingPanelTests
           -skip-testing:CompositorTests/SliderSnapTests
 
       - name: Run window tests serially
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.build.outcome == 'success' }}
         run: >
           xcodebuild test-without-building
           -project Compositor.xcodeproj
@@ -87,7 +88,7 @@ jobs:
           -only-testing:CompositorTests/SliderSnapTests
 
       - name: Upload test results
-        if: failure()
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: unit-test-results
