@@ -61,18 +61,203 @@ jobs:
           -skip-testing:CompositorUITests
 
       # These two suites show real windows and time them, so they run alone after the rest.
-      - name: Run unit tests in parallel
+      - name: Run layered unit-test diagnosis
+        id: test
         timeout-minutes: 45
-        run: >
-          xcodebuild test-without-building
-          -project Compositor.xcodeproj
-          -scheme Compositor
-          -destination 'platform=macOS,arch=arm64'
-          -derivedDataPath DerivedData
-          -resultBundlePath ParallelResults.xcresult
-          -parallel-testing-enabled NO
-          -skip-testing:CompositorTests/FloatingPanelTests
-          -skip-testing:CompositorTests/SliderSnapTests
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          diagnostics=VerifyDiagnostics
+          mkdir -p "$diagnostics"
+
+          start_observer() {
+            local stage="$1"
+            (
+              for delay in 0 60 120 90; do
+                if [[ "$delay" -gt 0 ]]; then sleep "$delay"; fi
+                {
+                  date -u '+%Y-%m-%dT%H:%M:%SZ'
+                  ps -axo pid,ppid,user,state,etime,pcpu,comm | \
+                    grep -E 'xcodebuild|testmanagerd|Compositor' || true
+                } >> "$diagnostics/${stage}-processes.log"
+              done
+            ) &
+            snapshot_pid=$!
+
+            log stream --style compact \
+              --predicate 'process == "xcodebuild" OR process == "testmanagerd" OR process == "Compositor"' \
+              > "$diagnostics/${stage}-unified.log" 2>&1 &
+            log_pid=$!
+          }
+
+          stop_observer() {
+            kill "$snapshot_pid" "$log_pid" 2>/dev/null || true
+            wait "$snapshot_pid" 2>/dev/null || true
+            wait "$log_pid" 2>/dev/null || true
+          }
+
+          run_stage() {
+            local stage="$1"
+            shift
+            start_observer "$stage"
+            "$@" > "$diagnostics/${stage}-xcodebuild.log" 2>&1
+            local status=$?
+            stop_observer
+            printf '%s\n' "$status" > "$diagnostics/${stage}-exit-code.txt"
+            tail -n 80 "$diagnostics/${stage}-xcodebuild.log" || true
+            return "$status"
+          }
+
+          # P0-A: establish the exact discovered test set before attempting an app-hosted run.
+          run_stage p0-enumerate \
+            xcodebuild test-without-building \
+            -project Compositor.xcodeproj \
+            -scheme Compositor \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath DerivedData \
+            -parallel-testing-enabled NO \
+            -skip-testing:CompositorTests/FloatingPanelTests \
+            -skip-testing:CompositorTests/SliderSnapTests \
+            -enumerate-tests \
+            -test-enumeration-style hierarchical \
+            -test-enumeration-format json \
+            -test-enumeration-output-path "$diagnostics/p0-discovered-tests.json"
+          enumerate_status=$?
+          if [[ "$enumerate_status" -ne 0 ]]; then
+            exit "$enumerate_status"
+          fi
+
+          # P0-B: this suite is pure geometry and does not use shared AppKit state.
+          run_stage p0-compositor-minimal \
+            xcodebuild test-without-building \
+            -project Compositor.xcodeproj \
+            -scheme Compositor \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath DerivedData \
+            -resultBundlePath "$diagnostics/P0CompositorMinimal.xcresult" \
+            -parallel-testing-enabled NO \
+            -only-testing:CompositorTests/ProjectTabLayoutTests
+          compositor_status=$?
+
+          if [[ "$compositor_status" -ne 0 ]]; then
+            xcrun xcresulttool get object --legacy \
+              --path "$diagnostics/P0CompositorMinimal.xcresult" \
+              --format json > "$diagnostics/p0-compositor-result.json" 2>&1 || true
+
+            if ! grep -q 'XCTHTestOperationCoordinatorErrorDomain\|test runner timed out while preparing to run tests' \
+              "$diagnostics/p0-compositor-result.json"; then
+              exit "$compositor_status"
+            fi
+
+            # P1: a temporary, dependency-free macOS app-hosted XCTest control. It stays outside the repository.
+            control_root="${RUNNER_TEMP}/compositor-xctest-control"
+            mkdir -p "$control_root/ControlHost" "$control_root/ControlTests" \
+              "$control_root/Control.xcodeproj/xcshareddata/xcschemes"
+
+            cat > "$control_root/ControlHost/main.swift" <<'EOF'
+            import AppKit
+
+            let application = NSApplication.shared
+            application.setActivationPolicy(.accessory)
+            NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
+          EOF
+
+            cat > "$control_root/ControlTests/ControlTests.swift" <<'EOF'
+            import XCTest
+
+            final class ControlTests: XCTestCase {
+                func testAppHostedHandshake() {
+                    XCTAssertTrue(true)
+                }
+            }
+          EOF
+
+            cat > "$control_root/Control.xcodeproj/project.pbxproj" <<'EOF'
+            // !$*UTF8*$!
+            {
+                archiveVersion = 1;
+                classes = {};
+                objectVersion = 77;
+                objects = {
+                    A00000000000000000000001 /* ControlHost */ = {isa = PBXFileReference; lastKnownFileType = wrapper.application; path = ControlHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+                    A00000000000000000000002 /* ControlTests */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = ControlTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+                    A00000000000000000000003 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+                    A00000000000000000000004 /* ControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlTests.swift; sourceTree = "<group>"; };
+                    A00000000000000000000010 /* ControlHost */ = {isa = PBXGroup; children = (A00000000000000000000003 /* main.swift */,); path = ControlHost; sourceTree = "<group>"; };
+                    A00000000000000000000011 /* ControlTests */ = {isa = PBXGroup; children = (A00000000000000000000004 /* ControlTests.swift */,); path = ControlTests; sourceTree = "<group>"; };
+                    A00000000000000000000012 /* Products */ = {isa = PBXGroup; children = (A00000000000000000000001 /* ControlHost */, A00000000000000000000002 /* ControlTests */); name = Products; sourceTree = "<group>"; };
+                    A00000000000000000000013 = {isa = PBXGroup; children = (A00000000000000000000010 /* ControlHost */, A00000000000000000000011 /* ControlTests */, A00000000000000000000012 /* Products */); sourceTree = "<group>"; };
+                    A00000000000000000000020 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* main.swift */; };
+                    A00000000000000000000021 /* ControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* ControlTests.swift */; };
+                    A00000000000000000000030 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000020 /* main.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+                    A00000000000000000000031 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000021 /* ControlTests.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+                    A00000000000000000000040 /* ControlHost */ = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000050; buildPhases = (A00000000000000000000030 /* Sources */,); buildRules = (); dependencies = (); name = ControlHost; productName = ControlHost; productReference = A00000000000000000000001 /* ControlHost */; productType = "com.apple.product-type.application"; };
+                    A00000000000000000000041 /* ControlTests */ = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000051; buildPhases = (A00000000000000000000031 /* Sources */,); buildRules = (); dependencies = (A00000000000000000000042 /* PBXTargetDependency */,); name = ControlTests; productName = ControlTests; productReference = A00000000000000000000002 /* ControlTests */; productType = "com.apple.product-type.bundle.unit-test"; };
+                    A00000000000000000000042 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A00000000000000000000040 /* ControlHost */; };
+                    A00000000000000000000050 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000060); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+                    A00000000000000000000051 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000061); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+                    A00000000000000000000052 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000062); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+                    A00000000000000000000060 = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_IDENTITY = "-"; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 14.7; PRODUCT_BUNDLE_IDENTIFIER = com.wonderassembly.verify-control.host; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SWIFT_VERSION = 5.0; }; name = Debug; };
+                    A00000000000000000000061 = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_IDENTITY = "-"; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 14.7; PRODUCT_BUNDLE_IDENTIFIER = com.wonderassembly.verify-control.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SWIFT_VERSION = 5.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ControlHost.app/Contents/MacOS/ControlHost"; }; name = Debug; };
+                    A00000000000000000000062 = {isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; }; name = Debug; };
+                    A00000000000000000000070 /* Project object */ = {isa = PBXProject; attributes = { LastUpgradeCheck = 2700; }; buildConfigurationList = A00000000000000000000052; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A00000000000000000000013; productRefGroup = A00000000000000000000012 /* Products */; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000040 /* ControlHost */, A00000000000000000000041 /* ControlTests */); };
+                };
+                rootObject = A00000000000000000000070 /* Project object */;
+            }
+          EOF
+
+            cat > "$control_root/Control.xcodeproj/xcshareddata/xcschemes/Control.xcscheme" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+            <Scheme LastUpgradeVersion="2700" version="1.7">
+              <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES">
+                <BuildActionEntries>
+                  <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A00000000000000000000040" BuildableName="ControlHost.app" BlueprintName="ControlHost" ReferencedContainer="container:Control.xcodeproj"/></BuildActionEntry>
+                  <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A00000000000000000000041" BuildableName="ControlTests.xctest" BlueprintName="ControlTests" ReferencedContainer="container:Control.xcodeproj"/></BuildActionEntry>
+                </BuildActionEntries>
+              </BuildAction>
+              <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES">
+                <MacroExpansion><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A00000000000000000000040" BuildableName="ControlHost.app" BlueprintName="ControlHost" ReferencedContainer="container:Control.xcodeproj"/></MacroExpansion>
+                <Testables><TestableReference skipped="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A00000000000000000000041" BuildableName="ControlTests.xctest" BlueprintName="ControlTests" ReferencedContainer="container:Control.xcodeproj"/></TestableReference></Testables>
+              </TestAction>
+            </Scheme>
+          EOF
+
+            cat > "$diagnostics/p1-control-conditions.txt" <<EOF
+            Same: macos-26 arm64 runner, Xcode 26.6 selected by this workflow, macOS destination arm64, xcodebuild, native macOS app-hosted XCTest, serial test execution.
+            Different: generated temporary project and bundle identifiers; no Compositor source, resources, entitlements, Swift packages, app configuration, or test suite; CODE_SIGN_IDENTITY=-; source is stored only under RUNNER_TEMP.
+          EOF
+
+            run_stage p1-native-control \
+              xcodebuild test \
+              -project "$control_root/Control.xcodeproj" \
+              -scheme Control \
+              -destination 'platform=macOS,arch=arm64' \
+              -configuration Debug \
+              -derivedDataPath "$control_root/DerivedData" \
+              -resultBundlePath "$diagnostics/P1NativeControl.xcresult" \
+              -parallel-testing-enabled NO \
+              CODE_SIGN_IDENTITY=-
+            control_status=$?
+            printf '%s\n' "$control_status" > "$diagnostics/p1-native-control-exit-code.txt"
+            cp -R "$control_root/Control.xcodeproj" "$diagnostics/P1NativeControl.xcodeproj"
+            cp "$control_root/ControlHost/main.swift" "$control_root/ControlTests/ControlTests.swift" "$diagnostics/"
+            exit "$compositor_status"
+          fi
+
+          # P1: preserve the existing full test command exactly once the minimal handshake succeeds.
+          run_stage p1-compositor-full \
+            xcodebuild test-without-building \
+            -project Compositor.xcodeproj \
+            -scheme Compositor \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath DerivedData \
+            -resultBundlePath ParallelResults.xcresult \
+            -parallel-testing-enabled NO \
+            -skip-testing:CompositorTests/FloatingPanelTests \
+            -skip-testing:CompositorTests/SliderSnapTests
+          full_status=$?
+          exit "$full_status"
 
       - name: Run window tests serially
         if: ${{ success() && !cancelled() && steps.build.outcome == 'success' }}
@@ -92,6 +277,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: unit-test-results
-          path: '*.xcresult'
+          path: |
+            *.xcresult
+            VerifyDiagnostics
           retention-days: 7
           if-no-files-found: ignore
