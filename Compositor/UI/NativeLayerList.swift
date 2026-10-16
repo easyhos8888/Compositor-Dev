@@ -970,8 +970,8 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         layerName = layer.name
         // A reused cell must not carry another row's half-finished rename.
         if renaming, layerID != layer.id { restoreLabel() }
-        if !renaming { nameLabel.stringValue = (layer.maskSourceID == nil ? "" : "↳ ") + layer.name }
-        dimensions.stringValue = layer.liveText != nil ? "Text · Double-click to edit" : layer.adjustment != nil ? "Adjustment · Double-click to edit" : layer.isGroup ? "Folder" : layer.sizeLabel
+        if !renaming { nameLabel.stringValue = (layer.maskSourceID == nil ? "" : "↳ ") + Self.displayName(for: layer.name) }
+        dimensions.stringValue = layer.liveText != nil ? "Text · Double-click to edit" : layer.adjustment != nil ? "Adjustment · Double-click to edit" : layer.isGroup ? String(localized: "Folder") : layer.sizeLabel
         if let source = layer.maskSourceID {
             let sourceName = session.document?.layers.first(where: { $0.id == source })?.name ?? "Missing source"
             dimensions.stringValue = "Clipped to \(sourceName)"
@@ -1028,6 +1028,19 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         nameLabel.layer?.backgroundColor = nil
         nameLabel.delegate = nil
     }
+
+    /// Default layer names are persisted in project manifests; localize only their presentation.
+    private static func displayName(for name: String) -> String {
+        if name.hasPrefix("Layer ") {
+            let suffix = String(name.dropFirst("Layer ".count))
+            if !suffix.isEmpty, suffix.allSatisfy(\.isNumber) { return "\(String(localized: "Layer")) \(suffix)" }
+        }
+        if name.hasPrefix("Folder ") {
+            let suffix = String(name.dropFirst("Folder ".count))
+            if !suffix.isEmpty, suffix.allSatisfy(\.isNumber) { return "\(String(localized: "Folder")) \(suffix)" }
+        }
+        return name
+    }
     private func endRenaming(keeping: Bool) {
         guard renaming, let session, let layerID else { return }
         let typed = nameLabel.stringValue
@@ -1037,7 +1050,7 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         // Show whatever name the layer ended up with, marked as the row shows it.
         if let layer = session.document?.layers.first(where: { $0.id == layerID }) {
             layerName = layer.name
-            nameLabel.stringValue = (layer.maskSourceID == nil ? "" : "↳ ") + layer.name
+            nameLabel.stringValue = (layer.maskSourceID == nil ? "" : "↳ ") + Self.displayName(for: layer.name)
         }
         // Hand focus back to the list, so tool shortcuts and the arrow keys work straight away.
         var ancestor = superview
